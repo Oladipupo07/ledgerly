@@ -15,6 +15,7 @@ interface CashFlowAndReportsViewProps {
   mode: "cashflow" | "reports";
   state: WorkspaceState;
   canExport: boolean;
+  onExportReport: (type: "income-expense" | "cash-movement" | "receivables" | "payables", from: string, to: string) => Promise<void>;
 }
 
 type ReportKind = "income_expense" | "cash_movement" | "receivables_aging" | "payables_due";
@@ -23,11 +24,15 @@ export function CashFlowAndReportsView({
   mode,
   state,
   canExport,
+  onExportReport,
 }: CashFlowAndReportsViewProps) {
   const [selectedReport, setSelectedReport] = useState<ReportKind>("income_expense");
   const [filterAccount, setFilterAccount] = useState<string>("all");
   const [filterCategory, setFilterCategory] = useState<string>("all");
   const [exportToast, setExportToast] = useState<string | null>(null);
+  const [exportFrom, setExportFrom] = useState(`${new Date().getFullYear()}-01-01`);
+  const [exportTo, setExportTo] = useState(CURRENT_REFERENCE_DATE);
+  const [exportBusy, setExportBusy] = useState(false);
 
   const accountBalances = useMemo(
     () => computeTrackingAccountBalances(state),
@@ -97,74 +102,15 @@ export function CashFlowAndReportsView({
     return Array.from(map.values()).filter((x) => x.count > 0);
   }, [state.categories, filteredPostedTransactions]);
 
-  const handleDownloadCsv = () => {
-    const timestamp = new Date().toISOString();
-    const lines: string[] = [
-      `# Ledgerly Management Report Export (Not Statutory Accounts)`,
-      `# Business: ${state.workspace.legalName} (${state.workspace.displayName})`,
-      `# Currency: NGN | Timezone: Africa/Lagos | Generated: ${timestamp}`,
-      `# Report Type: ${selectedReport} | Reference Date: ${CURRENT_REFERENCE_DATE}`,
-      "",
-    ];
-
-    if (selectedReport === "income_expense") {
-      lines.push("Category,Record Count,Recorded Inflow (NGN),Recorded Outflow (NGN),Net (NGN)");
-      for (const row of categoryBreakdown) {
-        lines.push(
-          `"${row.name}",${row.count},${(row.inflowKobo / 100).toFixed(2)},${(
-            row.outflowKobo / 100
-          ).toFixed(2)},${((row.inflowKobo - row.outflowKobo) / 100).toFixed(2)}`,
-        );
-      }
-    } else if (selectedReport === "cash_movement") {
-      lines.push(
-        "Tracking Label,Opening Balance (NGN),Posted Inflows (NGN),Posted Outflows (NGN),Recorded Balance (NGN)",
-      );
-      for (const item of accountBalances) {
-        lines.push(
-          `"${item.account.name}",${(item.account.openingBalanceKobo / 100).toFixed(2)},${(
-            item.inflowKobo / 100
-          ).toFixed(2)},${(item.outflowKobo / 100).toFixed(2)},${(
-            item.recordedBalanceKobo / 100
-          ).toFixed(2)}`,
-        );
-      }
-    } else if (selectedReport === "receivables_aging") {
-      lines.push("Invoice Number,Customer,Issue Date,Due Date,Days Overdue,Outstanding (NGN)");
-      for (const inv of state.invoices) {
-        const calc = computeInvoiceTotals(inv);
-        if (calc.outstandingKobo <= 0) continue;
-        const cust = state.contacts.find((c) => c.id === inv.customerId)?.name ?? "Customer";
-        lines.push(
-          `${inv.invoiceNumber},"${cust}",${inv.issueDate},${inv.dueDate},${calc.daysOverdue},${(
-            calc.outstandingKobo / 100
-          ).toFixed(2)}`,
-        );
-      }
-    } else {
-      lines.push("Bill Number,Supplier,Bill Date,Due Date,Status,Outstanding (NGN)");
-      for (const bill of state.bills) {
-        const calc = computeBillStatus(bill);
-        if (calc.outstandingKobo <= 0) continue;
-        const sup = state.contacts.find((c) => c.id === bill.supplierId)?.name ?? "Supplier";
-        lines.push(
-          `${bill.billNumber},"${sup}",${bill.billDate},${bill.dueDate},${calc.effectiveStatus},${(
-            calc.outstandingKobo / 100
-          ).toFixed(2)}`,
-        );
-      }
-    }
-
-    const blob = new Blob([lines.join("\n")], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `ledgerly-${selectedReport}-${CURRENT_REFERENCE_DATE}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
-    setExportToast(
-      `Exported ${selectedReport.replaceAll("_", " ")} CSV (${CURRENT_REFERENCE_DATE}).`,
-    );
+  const handleDownloadCsv = async () => {
+    const types = { income_expense: "income-expense", cash_movement: "cash-movement", receivables_aging: "receivables", payables_due: "payables" } as const;
+    setExportBusy(true);
+    setExportToast(null);
+    try {
+      await onExportReport(types[selectedReport], exportFrom, exportTo);
+      setExportToast("Report exported from server records for the selected period.");
+    } catch (error) { setExportToast(error instanceof Error ? error.message : "Could not export this report."); }
+    finally { setExportBusy(false); }
   };
 
   if (mode === "cashflow") {
@@ -293,9 +239,10 @@ export function CashFlowAndReportsView({
               <button
                 type="button"
                 className="primary"
-                onClick={handleDownloadCsv}
+                onClick={() => void handleDownloadCsv()}
+                disabled={exportBusy || !exportFrom || !exportTo}
               >
-                ↓ <span>Export CSV</span>
+                ↓ <span>{exportBusy ? "Exporting…" : "Export CSV"}</span>
               </button>
             </>
           )}
@@ -359,6 +306,8 @@ export function CashFlowAndReportsView({
 
       {/* Filters */}
       <section className="filter-bar">
+        <label className="form-field"><span>From</span><input type="date" value={exportFrom} max={exportTo} onChange={(event) => setExportFrom(event.target.value)} /></label>
+        <label className="form-field"><span>To</span><input type="date" value={exportTo} min={exportFrom} onChange={(event) => setExportTo(event.target.value)} /></label>
         <select
           className="period-select"
           value={filterAccount}

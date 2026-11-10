@@ -31,6 +31,7 @@ interface TeamAuditSettingsViewProps {
     maskedRef?: string;
     openingBalanceKobo: number;
   }) => void;
+  onToggleArchiveTrackingAccount?: (accountId: string) => void;
   onRevokeOtherSessions: () => void;
 }
 
@@ -49,6 +50,7 @@ export function TeamAuditSettingsView({
   onAddCategory,
   onToggleArchiveCategory,
   onAddTrackingAccount,
+  onToggleArchiveTrackingAccount,
   onRevokeOtherSessions,
 }: TeamAuditSettingsViewProps) {
   // Team & Audit states
@@ -195,7 +197,7 @@ export function TeamAuditSettingsView({
                       {m.phone && <span className="sub-meta">{m.phone}</span>}
                     </td>
                     <td>
-                      {canManageMembers && m.role !== "owner" ? (
+                      {canManageMembers && m.role !== "owner" && !m.invitationId ? (
                         <select
                           className="period-select"
                           value={m.role}
@@ -226,14 +228,16 @@ export function TeamAuditSettingsView({
                     </td>
                     <td>{m.lastActiveAt ?? `Invited ${m.invitedAt}`}</td>
                     <td>
-                      {canManageMembers && m.role !== "owner" ? (
+                      {canManageMembers && m.role !== "owner" && !m.invitationId ? (
                         <button
                           type="button"
                           className="subtle-btn"
                           onClick={() => onToggleMemberStatus(m.id)}
                         >
-                          {m.status === "active" ? "Deactivate" : "Activate / Approve"}
+                          {m.status === "active" ? "Deactivate" : "Activate"}
                         </button>
+                      ) : m.invitationId ? (
+                        <span className="sub-meta">Link shared outside Ledgerly</span>
                       ) : (
                         <span className="sub-meta">Primary Owner</span>
                       )}
@@ -315,7 +319,7 @@ export function TeamAuditSettingsView({
               <div className="modal-header">
                 <div>
                   <span className="brief-label">SCOPED WORKSPACE INVITATION</span>
-                  <h2 id="inv-mem-title">Invite a team member or accountant</h2>
+                  <h2 id="inv-mem-title">Create an invitation link</h2>
                 </div>
                 <button
                   type="button"
@@ -331,6 +335,7 @@ export function TeamAuditSettingsView({
                     {inviteError}
                   </div>
                 )}
+                <p className="sub-meta">Ledgerly creates a single-use, seven-day link. It does not send email; you will copy and share the link yourself.</p>
 
                 <div className="form-grid">
                   <label className="form-field full-span">
@@ -394,7 +399,7 @@ export function TeamAuditSettingsView({
                   className="primary"
                   onClick={handleInviteSubmit}
                 >
-                  Send invitation
+                  Create link
                 </button>
               </div>
             </div>
@@ -517,15 +522,13 @@ export function TeamAuditSettingsView({
               <h2>Active Sessions & Security</h2>
               <p>Manage verified devices signed into your account</p>
             </div>
-            {state.sessions.length > 1 && (
-              <button
-                type="button"
-                className="secondary-btn"
-                onClick={onRevokeOtherSessions}
-              >
-                Sign out other sessions
-              </button>
-            )}
+            <button
+              type="button"
+              className="secondary-btn"
+              onClick={onRevokeOtherSessions}
+            >
+              Sign out other sessions
+            </button>
           </div>
 
           {state.sessions.map((s) => (
@@ -568,6 +571,8 @@ export function TeamAuditSettingsView({
                 <th>Label Name</th>
                 <th>Type / Ref</th>
                 <th>Opening Recorded Balance</th>
+                <th>Status</th>
+                {canManageCategories && onToggleArchiveTrackingAccount && <th>Action</th>}
               </tr>
             </thead>
             <tbody>
@@ -576,6 +581,22 @@ export function TeamAuditSettingsView({
                   <td className="description">{acc.name}</td>
                   <td>{acc.maskedRef ?? acc.kind}</td>
                   <td>{formatNgn(acc.openingBalanceKobo)}</td>
+                  <td>
+                    <span className={`tag ${acc.archived ? "coral" : "income"}`}>
+                      {acc.archived ? "ARCHIVED" : "ACTIVE"}
+                    </span>
+                  </td>
+                  {canManageCategories && onToggleArchiveTrackingAccount && (
+                    <td>
+                      <button
+                        type="button"
+                        className="subtle-btn"
+                        onClick={() => onToggleArchiveTrackingAccount(acc.id)}
+                      >
+                        {acc.archived ? "Restore" : "Archive"}
+                      </button>
+                    </td>
+                  )}
                 </tr>
               ))}
             </tbody>

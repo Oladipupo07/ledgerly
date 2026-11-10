@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useRef } from "react";
 import {
   WorkspaceState,
   InvoiceLine,
@@ -64,24 +64,26 @@ export function InvoicesView({
     state.contacts.find((c) => c.roles.includes("customer"))?.id ?? "",
   );
   const [invIssueDate, setInvIssueDate] = useState(CURRENT_REFERENCE_DATE);
-  const [invDueDate, setInvDueDate] = useState("2026-11-20");
+  const [invDueDate, setInvDueDate] = useState(() => {
+    const date = new Date(`${CURRENT_REFERENCE_DATE}T00:00:00.000Z`);
+    date.setUTCDate(date.getUTCDate() + 14);
+    return date.toISOString().slice(0, 10);
+  });
   const [invLines, setInvLines] = useState<
     Array<{ id: string; description: string; quantity: string; unitPriceNaira: string }>
   >([
     {
       id: "line-1",
-      description: "Bespoke Corporate Uniform Set",
-      quantity: "10",
-      unitPriceNaira: "18500.00",
+      description: "",
+      quantity: "1",
+      unitPriceNaira: "",
     },
   ]);
   const [invDiscountInput, setInvDiscountInput] = useState("0");
-  const [invTaxLabel, setInvTaxLabel] = useState("VAT (User-configured)");
-  const [invTaxRate, setInvTaxRate] = useState("7.5");
-  const [invTerms, setInvTerms] = useState("Net 14 days from delivery.");
-  const [invPaymentInstr, setInvPaymentInstr] = useState(
-    "Bank: GTBank | Account Name: Kora Atelier & Textiles Ltd | Account No: 0128492041",
-  );
+  const [invTaxLabel, setInvTaxLabel] = useState("");
+  const [invTaxRate, setInvTaxRate] = useState("0");
+  const [invTerms, setInvTerms] = useState("");
+  const [invPaymentInstr, setInvPaymentInstr] = useState("");
   const [createError, setCreateError] = useState<string | null>(null);
 
   // Receipt Form State
@@ -92,6 +94,8 @@ export function InvoicesView({
   const [rcpAccount, setRcpAccount] = useState(state.trackingAccounts[0]?.id ?? "");
   const [rcpConfirmed, setRcpConfirmed] = useState(false);
   const [rcpError, setRcpError] = useState<string | null>(null);
+  const [reminderError, setReminderError] = useState<string | null>(null);
+  const reminderTextRef = useRef<HTMLTextAreaElement>(null);
 
   const contactsById = useMemo(
     () => new Map(state.contacts.map((c) => [c.id, c])),
@@ -988,9 +992,9 @@ export function InvoicesView({
               </div>
               <div className="field-block">
                 <h4>Message Preview</h4>
-                <p className="warning-note" style={{ whiteSpace: "pre-line" }}>
-                  {`Dear ${contactsById.get(reminderInvoiceObj.invoice.customerId)?.name ?? "Customer"},\n\nWe hope your week is going well. This is a polite reminder that Invoice ${reminderInvoiceObj.invoice.invoiceNumber} (issued ${formatDisplayDate(reminderInvoiceObj.invoice.issueDate)}) has an outstanding balance of ${formatNgn(reminderInvoiceObj.calc.outstandingKobo)}, which was due on ${formatDisplayDate(reminderInvoiceObj.invoice.dueDate)}.\n\n${reminderInvoiceObj.invoice.paymentInstructions}\n\nIf you have already sent payment, please share the transfer reference so we can update your receipt record.\n\nWarm regards,\n${state.workspace.displayName}`}
-                </p>
+                <textarea ref={reminderTextRef} className="code-textarea" rows={9} readOnly aria-label="Reminder draft text" value={`Dear ${contactsById.get(reminderInvoiceObj.invoice.customerId)?.name ?? "Customer"},\n\nWe hope your week is going well. This is a polite reminder that Invoice ${reminderInvoiceObj.invoice.invoiceNumber} (issued ${formatDisplayDate(reminderInvoiceObj.invoice.issueDate)}) has an outstanding balance of ${formatNgn(reminderInvoiceObj.calc.outstandingKobo)}, which was due on ${formatDisplayDate(reminderInvoiceObj.invoice.dueDate)}.\n\n${reminderInvoiceObj.invoice.paymentInstructions}\n\nIf you have already sent payment, please share the transfer reference so we can update your receipt record.\n\nWarm regards,\n${state.workspace.displayName}`} />
+                <p className="sub-meta">Ledgerly prepares this message only; you decide whether and where to send it.</p>
+                {reminderError && <p className="form-error" role="alert">{reminderError}</p>}
               </div>
             </div>
             <div className="modal-footer">
@@ -1004,12 +1008,20 @@ export function InvoicesView({
               <button
                 type="button"
                 className="primary"
-                onClick={() => {
-                  onSendReminder(reminderInvoiceObj.invoice.id);
-                  setReminderInvoiceId(null);
+                onClick={async () => {
+                  setReminderError(null);
+                  try {
+                    await navigator.clipboard.writeText(reminderTextRef.current?.value ?? "");
+                    onSendReminder(reminderInvoiceObj.invoice.id);
+                    setReminderInvoiceId(null);
+                  } catch {
+                    reminderTextRef.current?.focus();
+                    reminderTextRef.current?.select();
+                    setReminderError("Clipboard access was blocked. The draft is selected so you can copy it manually.");
+                  }
                 }}
               >
-                Log & send reminder
+                Copy reminder draft
               </button>
             </div>
           </div>

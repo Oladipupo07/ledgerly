@@ -46,6 +46,16 @@ npm run build
 6. **Cash Flow & Reconciled Reports (`FR-11`, `FR-12`)**
    - Retrospective recorded cash position by non-custodial tracking label (`GTBank ••2041`, `POS settlement`, `Cash`) with opening balance provenance.
    - Four management reports (`Income & Expense Summary`, `Cash Movement`, `Receivables Aging`, `Supplier Payables Due`) with CSV export and print/PDF output.
-7. **Team Roles, RBAC Switcher, Audit Trail & Settings (`FR-01`–`FR-05`, `FR-14`, `FR-15`)**
-   - Live **Viewing As** role switcher in the top header (`Owner`, `Bookkeeper`, `External Accountant`) to verify RBAC enforcement across every screen.
+7. **Team Roles, Invitations, Audit Trail & Settings (`FR-01`–`FR-05`, `FR-14`, `FR-15`)**
+   - Server-assigned workspace roles (`Owner`, `Admin`, `Bookkeeper`, `External Accountant`) with permission checks on every tenant API request.
    - Append-only Audit History feed, Workspace Settings, Category archiving, Active Session management, and First-Time Setup checklist.
+
+## Backend
+
+The API uses Auth.js OIDC sessions and PostgreSQL. Sign-in requires the identity provider to attest that the account email is verified. The API never accepts a user ID or role from request data. Each tenant request opens one database transaction, checks active membership and capability on the server, sets transaction-local identity/workspace context, and switches to the restricted `ledgerly_app` role. Migration 002 enables and forces PostgreSQL RLS beneath those checks. Posted financial records are immutable; corrections add a reversing entry with a reason and audit event. Financial values are bounded to remain exact in JavaScript and database calculations.
+
+Backend routes cover workspace creation/listing, member invitations/acceptance and role changes, contacts, categories, tracking labels, transaction drafts/postings/reversals, invoices and bookkeeping receipts, supplier bills and recorded payments, audit history, and four reports with CSV export. Receipt and bill-payment routes only record bookkeeping data; they do not initiate transfers or hold funds.
+
+Copy `.env.example` to `.env.local` and set the OIDC values and a random `AUTH_SECRET`. For local development, `docker compose up -d` starts PostgreSQL. Run `npm run db:migrate` to apply the numbered schema migrations. For Supabase, use the transaction-mode pooler URL for `DATABASE_URL`; remote database connections use verified TLS. Use a direct or session connection with migration privileges for `MIGRATION_DATABASE_URL`, because migration 002 creates and grants the restricted application role. Do not run migrations against a production project until the migration SQL and backup plan have been reviewed.
+
+The responsive UI uses authenticated workspace data from these APIs. Configure a valid OIDC provider and database before exercising authenticated routes. Local checks include `npm run typecheck`, `npm run lint`, `npm test`, and `npm run build`; the tests cover financial arithmetic, CSV handling, role capabilities, and key migration safeguards but do not replace PostgreSQL integration tests.

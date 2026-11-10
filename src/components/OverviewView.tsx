@@ -34,14 +34,52 @@ interface OverviewViewProps {
   onRestoreObservations: () => void;
 }
 
-const SIX_MONTH_SERIES = [
-  { month: "Jun 2026", incomeKobo: 124_000_00, expenseKobo: 82_000_00 },
-  { month: "Jul 2026", incomeKobo: 158_000_00, expenseKobo: 104_000_00 },
-  { month: "Aug 2026", incomeKobo: 132_000_00, expenseKobo: 96_000_00 },
-  { month: "Sep 2026", incomeKobo: 194_000_00, expenseKobo: 112_000_00 },
-  { month: "Oct 2026", incomeKobo: 151_450_00, expenseKobo: 129_970_00 },
-  { month: "Nov 2026 (MTD)", incomeKobo: 93_000_00, expenseKobo: 16_850_00 },
-];
+const MONTH_NAMES = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+function computeSixMonthSeries(state: WorkspaceState): Array<{ month: string; incomeKobo: number; expenseKobo: number }> {
+  const posted = state.transactions.filter((t) => t.status === "posted" && t.type !== "transfer");
+  const latestDateStr = posted.reduce((max, t) => (t.date > max ? t.date : max), "") || new Date().toISOString().slice(0, 10);
+  const [refYearStr, refMonthStr] = latestDateStr.split("-");
+  const refYear = Number(refYearStr) || new Date().getUTCFullYear();
+  const refMonth = (Number(refMonthStr) || new Date().getUTCMonth() + 1) - 1; // 0-indexed
+
+  const buckets: Array<{ key: string; month: string; incomeKobo: number; expenseKobo: number }> = [];
+  for (let offset = 5; offset >= 0; offset -= 1) {
+    const d = new Date(Date.UTC(refYear, refMonth - offset, 1));
+    const y = d.getUTCFullYear();
+    const m = d.getUTCMonth();
+    const key = `${y}-${String(m + 1).padStart(2, "0")}`;
+    const label = offset === 0 ? `${MONTH_NAMES[m]} ${y} (MTD)` : `${MONTH_NAMES[m]} ${y}`;
+    buckets.push({ key, month: label, incomeKobo: 0, expenseKobo: 0 });
+  }
+  const byKey = new Map(buckets.map((b) => [b.key, b]));
+  for (const tx of posted) {
+    const key = tx.date.slice(0, 7);
+    const bucket = byKey.get(key);
+    if (!bucket) continue;
+    if (tx.direction === "inflow") {
+      bucket.incomeKobo += tx.amountKobo;
+    } else {
+      bucket.expenseKobo += tx.amountKobo;
+    }
+  }
+  return buckets.map(({ month, incomeKobo, expenseKobo }) => ({ month, incomeKobo, expenseKobo }));
+}
+
+function formatWatEyebrow(): string {
+  try {
+    const formatted = new Intl.DateTimeFormat("en-NG", {
+      weekday: "long",
+      day: "numeric",
+      month: "long",
+      year: "numeric",
+      timeZone: "Africa/Lagos",
+    }).format(new Date());
+    return `${formatted.toUpperCase()} · AFRICA/LAGOS (WAT)`;
+  } catch {
+    return `${new Date().toISOString().slice(0, 10)} · AFRICA/LAGOS (WAT)`;
+  }
+}
 
 export function OverviewView({
   state,
@@ -60,6 +98,7 @@ export function OverviewView({
   const summary = computeDashboardSummary(state, periodDays);
   const allObservations = buildMoneyBrief(state, periodDays);
   const visibleObservations = allObservations.filter((o) => !o.dismissed);
+  const sixMonthSeries = computeSixMonthSeries(state);
 
   const contactsById = new Map(state.contacts.map((c) => [c.id, c.name]));
   const categoriesById = new Map(state.categories.map((c) => [c.id, c.name]));
@@ -71,16 +110,16 @@ export function OverviewView({
     .slice(0, 6);
 
   const maxChartKobo = Math.max(
-    ...SIX_MONTH_SERIES.flatMap((m) => [m.incomeKobo, m.expenseKobo]),
-    1,
+    ...sixMonthSeries.flatMap((m) => [m.incomeKobo, m.expenseKobo]),
+    100_00,
   );
 
   return (
     <div className="page-wrap">
       <div className="heading-row">
         <div>
-          <p className="eyebrow">FRIDAY, 6 NOVEMBER 2026 · AFRICA/LAGOS (WAT)</p>
-          <h1>Good morning, Amina</h1>
+          <p className="eyebrow">{formatWatEyebrow()}</p>
+          <h1>Money Brief for {state.workspace.displayName}</h1>
           <p className="subheading">
             Here’s what’s happening with <b>{state.workspace.displayName}</b>’s recorded business money.
           </p>
@@ -313,7 +352,7 @@ export function OverviewView({
                   </tr>
                 </thead>
                 <tbody>
-                  {SIX_MONTH_SERIES.map((row) => (
+                  {sixMonthSeries.map((row) => (
                     <tr key={row.month}>
                       <td className="description">{row.month}</td>
                       <td className="positive">+{formatNgn(row.incomeKobo)}</td>
@@ -330,13 +369,13 @@ export function OverviewView({
             <>
               <div className="chart" role="img" aria-label="Six month income and expense bar chart">
                 <div className="axis">
-                  <span>₦2.0M</span>
-                  <span>₦1.5M</span>
-                  <span>₦1.0M</span>
-                  <span>₦500k</span>
+                  <span>{formatNgn(maxChartKobo)}</span>
+                  <span>{formatNgn(Math.round(maxChartKobo * 0.75))}</span>
+                  <span>{formatNgn(Math.round(maxChartKobo * 0.5))}</span>
+                  <span>{formatNgn(Math.round(maxChartKobo * 0.25))}</span>
                 </div>
                 <div className="bars">
-                  {SIX_MONTH_SERIES.map((item) => {
+                  {sixMonthSeries.map((item) => {
                     const incPct = Math.round((item.incomeKobo / maxChartKobo) * 92);
                     const expPct = Math.round((item.expenseKobo / maxChartKobo) * 92);
                     return (

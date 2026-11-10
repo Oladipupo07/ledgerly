@@ -6,12 +6,10 @@ import {
   TransactionRecord,
   TransactionType,
   ImportRowPreview,
-  parseAndValidateCsvImport,
   formatDisplayDate,
   CURRENT_REFERENCE_DATE,
 } from "@/lib/domain";
 import { formatNgn, parseNairaToKobo } from "@/lib/money";
-import { SAMPLE_CSV_TEMPLATE } from "@/lib/seed";
 
 interface TransactionsViewProps {
   state: WorkspaceState;
@@ -38,11 +36,17 @@ interface TransactionsViewProps {
   }) => void;
   onPostDraftTransaction: (txId: string) => void;
   onReverseTransaction: (txId: string, reason: string, replacementAmountKobo?: number) => void;
+  onPreviewCsvImport: (payload: {
+    fileName: string; trackingAccountId: string; csv: string;
+    dateFormat: "iso" | "dmy"; decimalSeparator: "." | ",";
+    mapping: { date: number; description: number; amount: number; reference?: number; direction?: number };
+  }) => Promise<{ batchId: string; rows: Array<{ id: string; rowNumber: number; date?: string; description?: string; amountKobo?: string; direction?: "inflow" | "outflow"; reference?: string; outcome: string; issue?: string }> }>;
   onCommitCsvImport: (payload: {
+    batchId: string;
     fileName: string;
     trackingAccountId: string;
     rows: ImportRowPreview[];
-  }) => void;
+  }) => Promise<void>;
 }
 
 export function TransactionsView({
@@ -56,6 +60,7 @@ export function TransactionsView({
   onCreateTransaction,
   onPostDraftTransaction,
   onReverseTransaction,
+  onPreviewCsvImport,
   onCommitCsvImport,
 }: TransactionsViewProps) {
   const [search, setSearch] = useState("");
@@ -90,13 +95,21 @@ export function TransactionsView({
 
   // CSV Import Wizard state
   const [importStep, setImportStep] = useState<1 | 2 | 3>(1);
-  const [csvFileName, setCsvFileName] = useState("gtbank-statement-nov2026.csv");
-  const [csvText, setCsvText] = useState(SAMPLE_CSV_TEMPLATE);
+  const [csvFileName, setCsvFileName] = useState("");
+  const [csvText, setCsvText] = useState("Date,Description,Amount,Reference,Type\n");
   const [csvDateFormat, setCsvDateFormat] = useState<"YYYY-MM-DD" | "DD/MM/YYYY">("YYYY-MM-DD");
   const [csvDecimalSep, setCsvDecimalSep] = useState<"." | ",">(".");
   const [csvAccount, setCsvAccount] = useState(state.trackingAccounts[0]?.id ?? "");
   const [csvDefaultCategory, setCsvDefaultCategory] = useState(state.categories[0]?.id ?? "");
+  const [csvDateColumn, setCsvDateColumn] = useState(0);
+  const [csvDescriptionColumn, setCsvDescriptionColumn] = useState(1);
+  const [csvAmountColumn, setCsvAmountColumn] = useState(2);
+  const [csvReferenceColumn, setCsvReferenceColumn] = useState(3);
+  const [csvDirectionColumn, setCsvDirectionColumn] = useState(4);
   const [previewRows, setPreviewRows] = useState<ImportRowPreview[]>([]);
+  const [serverBatchId, setServerBatchId] = useState("");
+  const [importError, setImportError] = useState<string | null>(null);
+  const [importBusy, setImportBusy] = useState(false);
 
   React.useEffect(() => {
     if (openModalSignal === "new_tx") {
@@ -216,17 +229,30 @@ export function TransactionsView({
     setReplacementAmountInput("");
   };
 
-  const handleGenerateCsvPreview = () => {
-    const parsed = parseAndValidateCsvImport({
-      csvText,
-      dateFormat: csvDateFormat,
-      decimalSeparator: csvDecimalSep,
-      defaultCategoryId: csvDefaultCategory,
-      trackingAccountId: csvAccount,
-      existingTransactions: state.transactions,
-    });
-    setPreviewRows(parsed);
-    setImportStep(2);
+  const handleGenerateCsvPreview = async () => {
+    setImportError(null);
+    setImportBusy(true);
+    try {
+      const preview = await onPreviewCsvImport({
+        fileName: csvFileName || "uploaded-records.csv", trackingAccountId: csvAccount, csv: csvText,
+        dateFormat: csvDateFormat === "YYYY-MM-DD" ? "iso" : "dmy", decimalSeparator: csvDecimalSep,
+        mapping: { date: csvDateColumn, description: csvDescriptionColumn, amount: csvAmountColumn,
+          ...(csvReferenceColumn >= 0 && csvReferenceColumn < csvHeaders.length ? { reference: csvReferenceColumn } : {}),
+          ...(csvDirectionColumn >= 0 && csvDirectionColumn < csvHeaders.length ? { direction: csvDirectionColumn } : {}) },
+      });
+      setServerBatchId(preview.batchId);
+      setPreviewRows(preview.rows.map((row) => ({
+        rowNumber: row.rowNumber, serverRowId: row.id, rawDate: row.date || "Invalid date", parsedDate: row.date,
+        rawDescription: row.description || "", rawAmount: row.amountKobo ? formatNgn(Number(row.amountKobo)) : "Invalid amount",
+        amountKobo: row.amountKobo ? Number(row.amountKobo) : undefined, direction: row.direction,
+        reference: row.reference, categoryId: csvDefaultCategory, trackingAccountId: csvAccount,
+        status: row.outcome === "error" ? "error" : row.outcome === "duplicate" ? "duplicate_candidate" : "valid",
+        issueMessage: row.issue, decision: row.outcome === "error" || row.outcome === "duplicate" ? "skip" : "include",
+      })));
+      setImportStep(2);
+    } catch (error) {
+      setImportError(error instanceof Error ? error.message : "Could not preview this CSV file.");
+    } finally { setImportBusy(false); }
   };
 
   const handleToggleRowDecision = (rowNumber: number) => {
@@ -241,14 +267,30 @@ export function TransactionsView({
     );
   };
 
-  const handleCommitImport = () => {
-    onCommitCsvImport({
-      fileName: csvFileName || "uploaded-records.csv",
-      trackingAccountId: csvAccount,
-      rows: previewRows,
-    });
-    setImportStep(3);
+  const handleCommitImport = async () => {
+    if (!serverBatchId) return;
+    setImportError(null);
+    setImportBusy(true);
+    try {
+      await onCommitCsvImport({
+        batchId: serverBatchId,
+        fileName: csvFileName || "uploaded-records.csv",
+        trackingAccountId: csvAccount,
+        rows: previewRows,
+      });
+      setImportStep(3);
+    } catch (error) {
+      setImportError(error instanceof Error ? error.message : "Could not commit the CSV import.");
+    } finally { setImportBusy(false); }
   };
+
+  const csvHeaders = csvText.split(/\r?\n/, 1)[0].split(",").map((header, index) => header.trim().replace(/^"|"$/g, "") || `Column ${index + 1}`);
+  const columnSelect = (value: number, onChange: (value: number) => void, optional = false) => (
+    <select value={optional && (value < 0 || value >= csvHeaders.length) ? "none" : String(value < csvHeaders.length ? value : 0)} onChange={(event) => onChange(event.target.value === "none" ? -1 : Number(event.target.value))}>
+      {optional && <option value="none">Not present</option>}
+      {csvHeaders.map((header, index) => <option key={`${index}-${header}`} value={index}>{header} · column {index + 1}</option>)}
+    </select>
+  );
 
   return (
     <div className="page-wrap">
@@ -951,6 +993,12 @@ export function TransactionsView({
                     </select>
                   </label>
 
+                  <label className="form-field"><span>Date column</span>{columnSelect(csvDateColumn, setCsvDateColumn)}</label>
+                  <label className="form-field"><span>Description column</span>{columnSelect(csvDescriptionColumn, setCsvDescriptionColumn)}</label>
+                  <label className="form-field"><span>Amount column</span>{columnSelect(csvAmountColumn, setCsvAmountColumn)}</label>
+                  <label className="form-field"><span>Reference column</span>{columnSelect(csvReferenceColumn, setCsvReferenceColumn, true)}</label>
+                  <label className="form-field"><span>Direction/type column</span>{columnSelect(csvDirectionColumn, setCsvDirectionColumn, true)}</label>
+
                   <label className="form-field">
                     <span>Default Category for Imported Rows</span>
                     <select
@@ -968,25 +1016,26 @@ export function TransactionsView({
                   </label>
 
                   <label className="form-field full-span">
-                    <span>
-                      CSV Content (Columns: <code>Date,Description,Amount,Reference,Type</code>)
-                    </span>
+                    <span>Upload a CSV file or paste CSV content (columns: Date, Description, Amount, Reference, Type)</span>
+                    <input type="file" accept=".csv,text/csv" onChange={(event) => {
+                      const file = event.target.files?.[0];
+                      if (file) void file.text().then((text) => { setCsvFileName(file.name); setCsvText(text); }).catch(() => setImportError("Could not read this CSV file."));
+                    }} />
                     <textarea
                       rows={7}
                       value={csvText}
                       onChange={(e) => setCsvText(e.target.value)}
                       className="code-textarea"
                     />
-                    <small>
-                      Notice row 2 is an intentional duplicate of existing transaction{" "}
-                      <code>NIP-GTB-99412</code> and row 5 has an invalid date so you can test validation & deduplication.
-                    </small>
+                    <small>Possible duplicate rows will be flagged against records in this workspace before commit.</small>
                   </label>
+                  {importError && <p className="form-error full-span" role="alert">{importError}</p>}
                 </div>
               )}
 
               {importStep === 2 && (
                 <div>
+                  {importError && <p className="form-error" role="alert">{importError}</p>}
                   <div className="evidence-summary-box">
                     <div>
                       <small>Total Rows Parsed</small>
@@ -1109,9 +1158,10 @@ export function TransactionsView({
                   <button
                     type="button"
                     className="primary"
-                    onClick={handleGenerateCsvPreview}
+                    onClick={() => void handleGenerateCsvPreview()}
+                    disabled={importBusy || !csvAccount || !csvText.trim()}
                   >
-                    Preview & validate rows →
+                    {importBusy ? "Checking rows…" : "Preview & validate rows →"}
                   </button>
                 </>
               )}
@@ -1127,10 +1177,10 @@ export function TransactionsView({
                   <button
                     type="button"
                     className="primary"
-                    disabled={previewRows.filter((r) => r.decision === "include").length === 0}
-                    onClick={handleCommitImport}
+                    disabled={importBusy}
+                    onClick={() => void handleCommitImport()}
                   >
-                    Commit {previewRows.filter((r) => r.decision === "include").length} included row(s)
+                    {importBusy ? "Committing…" : `Commit ${previewRows.filter((r) => r.decision === "include").length} included row(s)`}
                   </button>
                 </>
               )}

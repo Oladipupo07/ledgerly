@@ -147,6 +147,7 @@ export interface SupplierBill {
 
 export interface ImportRowPreview {
   rowNumber: number;
+  serverRowId?: string;
   rawDate: string;
   parsedDate?: string;
   rawDescription: string;
@@ -245,8 +246,9 @@ export interface WorkspaceState {
   notificationPreferences: NotificationPreferences;
 }
 
-/** Reference "current" date in the Ledgerly MVP environment (6 Nov 2026, Africa/Lagos) */
-export const CURRENT_REFERENCE_DATE = "2026-11-06";
+/** Current calendar date in the product's Nigeria time zone. */
+const lagosDateParts = new Intl.DateTimeFormat("en-CA", { timeZone: "Africa/Lagos", year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(new Date());
+export const CURRENT_REFERENCE_DATE = `${lagosDateParts.find((part) => part.type === "year")?.value}-${lagosDateParts.find((part) => part.type === "month")?.value}-${lagosDateParts.find((part) => part.type === "day")?.value}`;
 
 export function formatDisplayDate(isoDate: string): string {
   const [y, m, d] = isoDate.slice(0, 10).split("-").map(Number);
@@ -273,18 +275,24 @@ export function computeInvoiceTotals(invoice: Invoice): {
   daysOverdue: number;
   effectiveState: InvoiceLifecycleState | "overdue";
 } {
-  const subtotalKobo = invoice.lines.reduce(
-    (sum, line) => sum + Math.round(line.quantity * line.unitPriceKobo),
-    0,
-  );
-  const discountKobo = Math.min(invoice.discountKobo, subtotalKobo);
-  const taxableKobo = Math.max(0, subtotalKobo - discountKobo);
-  const taxKobo = invoice.taxRatePercent
-    ? Math.round((taxableKobo * invoice.taxRatePercent) / 100)
-    : 0;
-  const totalKobo = taxableKobo + taxKobo;
-  const paidKobo = invoice.receipts.reduce((sum, r) => sum + r.amountKobo, 0);
-  const outstandingKobo = Math.max(0, totalKobo - paidKobo);
+  const roundRatio = (numerator: bigint, denominator: bigint) => (numerator + denominator / 2n) / denominator;
+  const subtotal = invoice.lines.reduce((sum, line) => {
+    const quantityMilli = BigInt(Math.round(line.quantity * 1000));
+    const unitPriceKobo = BigInt(Math.round(line.unitPriceKobo));
+    return sum + roundRatio(quantityMilli * unitPriceKobo, 1000n);
+  }, 0n);
+  const subtotalKobo = Number(subtotal);
+  const discount = BigInt(Math.max(0, Math.round(invoice.discountKobo)));
+  const taxable = subtotal > discount ? subtotal - discount : 0n;
+  const discountKobo = Number(discount);
+  const taxableKobo = Number(taxable);
+  const taxRateHundredths = BigInt(Math.round((invoice.taxRatePercent ?? 0) * 100));
+  const tax = roundRatio(taxable * taxRateHundredths, 10000n);
+  const taxKobo = Number(tax);
+  const totalKobo = Number(taxable + tax);
+  const paid = invoice.receipts.reduce((sum, receipt) => sum + BigInt(Math.max(0, Math.round(receipt.amountKobo))), 0n);
+  const paidKobo = Number(paid);
+  const outstandingKobo = Number(taxable + tax > paid ? taxable + tax - paid : 0n);
 
   const overdueDays = daysBetween(invoice.dueDate, CURRENT_REFERENCE_DATE);
   const isOverdue =

@@ -23,6 +23,7 @@ interface ContactsAndBillsViewProps {
     phone?: string;
     businessId?: string;
     notes?: string;
+    confirmDuplicate?: boolean;
   }) => void;
   onCreateBill: (payload: {
     billNumber: string;
@@ -40,6 +41,8 @@ interface ContactsAndBillsViewProps {
     trackingAccountId: string;
     reference: string;
   }) => void;
+  onToggleArchiveContact?: (contactId: string, nextStatus: "active" | "archived") => void;
+  onCancelBill?: (billId: string) => void;
 }
 
 export function ContactsAndBillsView({
@@ -49,6 +52,8 @@ export function ContactsAndBillsView({
   onCreateContact,
   onCreateBill,
   onRecordBillPayment,
+  onToggleArchiveContact,
+  onCancelBill,
 }: ContactsAndBillsViewProps) {
   const [search, setSearch] = useState("");
   const [selectedContact, setSelectedContact] = useState<Contact | null>(null);
@@ -73,7 +78,11 @@ export function ContactsAndBillsView({
     state.contacts.find((c) => c.roles.includes("supplier"))?.id ?? "",
   );
   const [billDate, setBillDate] = useState(CURRENT_REFERENCE_DATE);
-  const [billDueDate, setBillDueDate] = useState("2026-11-14");
+  const [billDueDate, setBillDueDate] = useState(() => {
+    const date = new Date(`${CURRENT_REFERENCE_DATE}T00:00:00.000Z`);
+    date.setUTCDate(date.getUTCDate() + 7);
+    return date.toISOString().slice(0, 10);
+  });
   const [billAmountInput, setBillAmountInput] = useState("");
   const [billCategory, setBillCategory] = useState(
     state.categories.find((c) => c.type === "expense")?.id ?? state.categories[0]?.id ?? "",
@@ -117,6 +126,28 @@ export function ContactsAndBillsView({
     });
   }, [state.contacts, mode, search]);
 
+  const contactSummaries = useMemo(
+    () => roleFilteredContacts.map((contact) => {
+      const openInvoices = state.invoices
+        .filter((invoice) => invoice.customerId === contact.id)
+        .map((invoice) => computeInvoiceTotals(invoice))
+        .filter((invoice) => invoice.outstandingKobo > 0);
+      const openBills = state.bills
+        .filter((bill) => bill.supplierId === contact.id)
+        .map((bill) => computeBillStatus(bill))
+        .filter((bill) => bill.outstandingKobo > 0);
+      const isCustomerList = mode === "customers";
+      return {
+        contact,
+        openCount: isCustomerList ? openInvoices.length : openBills.length,
+        outstandingKobo: isCustomerList
+          ? openInvoices.reduce((total, invoice) => total + invoice.outstandingKobo, 0)
+          : openBills.reduce((total, bill) => total + bill.outstandingKobo, 0),
+      };
+    }),
+    [roleFilteredContacts, state.invoices, state.bills, mode],
+  );
+
   const evaluatedBills = useMemo(() => {
     return state.bills.map((bill) => ({
       bill,
@@ -152,6 +183,7 @@ export function ContactsAndBillsView({
       phone: cntPhone.trim() || undefined,
       businessId: cntBizId.trim() || undefined,
       notes: cntNotes.trim() || undefined,
+      confirmDuplicate: cntConfirmDuplicate,
     });
 
     setCntName("");
@@ -289,7 +321,7 @@ export function ContactsAndBillsView({
       </section>
 
       {/* Directory Table */}
-      <section className="panel transactions">
+      <section className="panel transactions contact-directory-panel">
         <div className="panel-head">
           <div>
             <h2>
@@ -319,26 +351,7 @@ export function ContactsAndBillsView({
               </tr>
             </thead>
             <tbody>
-              {roleFilteredContacts.map((contact) => {
-                const contactInvoices = state.invoices
-                  .filter((i) => i.customerId === contact.id)
-                  .map((i) => computeInvoiceTotals(i))
-                  .filter((c) => c.outstandingKobo > 0);
-
-                const contactBills = state.bills
-                  .filter((b) => b.supplierId === contact.id)
-                  .map((b) => computeBillStatus(b))
-                  .filter((c) => c.outstandingKobo > 0);
-
-                const receivableKobo = contactInvoices.reduce(
-                  (s, c) => s + c.outstandingKobo,
-                  0,
-                );
-                const payableKobo = contactBills.reduce(
-                  (s, c) => s + c.outstandingKobo,
-                  0,
-                );
-
+              {contactSummaries.map(({ contact, openCount, outstandingKobo }) => {
                 return (
                   <tr key={contact.id}>
                     <td className="description">
@@ -363,18 +376,10 @@ export function ContactsAndBillsView({
                     </td>
                     <td>{contact.businessId ?? "—"}</td>
                     <td>
-                      {mode === "customers"
-                        ? `${contactInvoices.length} open`
-                        : `${contactBills.length} open`}
+                      {`${openCount} open`}
                     </td>
-                    <td
-                      className={
-                        (mode === "customers" ? receivableKobo : payableKobo) > 0
-                          ? "negative"
-                          : "positive"
-                      }
-                    >
-                      {formatNgn(mode === "customers" ? receivableKobo : payableKobo)}
+                    <td className={outstandingKobo > 0 ? "negative" : "positive"}>
+                      {formatNgn(outstandingKobo)}
                     </td>
                     <td>
                       <button
@@ -390,6 +395,29 @@ export function ContactsAndBillsView({
               })}
             </tbody>
           </table>
+        </div>
+        <div className="contact-cards" aria-label={`${mode} directory`}>
+          {contactSummaries.map(({ contact, openCount, outstandingKobo }) => {
+            return (
+              <article className="contact-card" key={contact.id}>
+                <div className="contact-card-title">
+                  <button type="button" className="row-title-btn" onClick={() => setSelectedContact(contact)}>
+                    {contact.name}
+                  </button>
+                  <div className="contact-card-roles">
+                    {contact.roles.map((role) => <span key={role} className="tag income">{role.toUpperCase()}</span>)}
+                  </div>
+                </div>
+                <dl>
+                  <div><dt>Email / Phone</dt><dd>{contact.email ?? "—"}{contact.phone && <span>{contact.phone}</span>}</dd></div>
+                  <div><dt>Business ID</dt><dd>{contact.businessId ?? "—"}</dd></div>
+                  <div><dt>{mode === "customers" ? "Open invoices" : "Unpaid bills"}</dt><dd>{openCount}</dd></div>
+                  <div><dt>{mode === "customers" ? "Outstanding" : "Payable"}</dt><dd className={outstandingKobo > 0 ? "negative" : "positive"}>{formatNgn(outstandingKobo)}</dd></div>
+                </dl>
+                <button type="button" className="subtle-btn" onClick={() => setSelectedContact(contact)}>View profile →</button>
+              </article>
+            );
+          })}
         </div>
       </section>
 
@@ -446,21 +474,32 @@ export function ContactsAndBillsView({
                         {formatNgn(calc.outstandingKobo)}
                       </td>
                       <td>
-                        {calc.outstandingKobo > 0 && canWrite ? (
-                          <button
-                            type="button"
-                            className="link-btn"
-                            onClick={() => {
-                              setPayingBill(bill);
-                              setPayAmountInput((calc.outstandingKobo / 100).toFixed(2));
-                              setPayRef("");
-                              setPayError(null);
-                            }}
-                          >
-                            Record payment status
-                          </button>
+                        {calc.outstandingKobo > 0 && bill.status !== "cancelled" && canWrite ? (
+                          <div className="table-actions">
+                            <button
+                              type="button"
+                              className="link-btn"
+                              onClick={() => {
+                                setPayingBill(bill);
+                                setPayAmountInput((calc.outstandingKobo / 100).toFixed(2));
+                                setPayRef("");
+                                setPayError(null);
+                              }}
+                            >
+                              Record payment status
+                            </button>
+                            {bill.paidAmountKobo === 0 && onCancelBill && (
+                              <button
+                                type="button"
+                                className="subtle-btn"
+                                onClick={() => onCancelBill(bill.id)}
+                              >
+                                Cancel bill
+                              </button>
+                            )}
+                          </div>
                         ) : (
-                          <span className="sub-meta">Settled</span>
+                          <span className="sub-meta">{bill.status === "cancelled" ? "Cancelled" : "Settled"}</span>
                         )}
                       </td>
                     </tr>
@@ -545,6 +584,19 @@ export function ContactsAndBillsView({
               </div>
             </div>
             <div className="modal-footer">
+              {canWrite && onToggleArchiveContact && (
+                <button
+                  type="button"
+                  className="subtle-btn"
+                  onClick={() => {
+                    const nextStatus = selectedContact.status === "archived" ? "active" : "archived";
+                    onToggleArchiveContact(selectedContact.id, nextStatus);
+                    setSelectedContact(null);
+                  }}
+                >
+                  {selectedContact.status === "archived" ? "Restore contact" : "Archive contact"}
+                </button>
+              )}
               <button
                 type="button"
                 className="secondary-btn"

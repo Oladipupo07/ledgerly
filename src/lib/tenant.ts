@@ -15,6 +15,8 @@ export type Capability =
   | "invoice:create_send"
   | "invoice:record_receipt"
   | "bill:create_update"
+  | "contact:manage"
+  | "tracking_account:manage"
   | "category:manage"
   | "report:view"
   | "report:export"
@@ -23,6 +25,7 @@ export type Capability =
 
 export type Membership = {
   id: string;
+  invitationId?: string;
   userId: string;
   name: string;
   email: string;
@@ -47,6 +50,8 @@ const ROLE_CAPABILITIES: Record<Role, readonly Capability[]> = {
     "invoice:create_send",
     "invoice:record_receipt",
     "bill:create_update",
+    "contact:manage",
+    "tracking_account:manage",
     "category:manage",
     "report:view",
     "report:export",
@@ -64,6 +69,8 @@ const ROLE_CAPABILITIES: Record<Role, readonly Capability[]> = {
     "invoice:create_send",
     "invoice:record_receipt",
     "bill:create_update",
+    "contact:manage",
+    "tracking_account:manage",
     "category:manage",
     "report:view",
     "report:export",
@@ -79,6 +86,8 @@ const ROLE_CAPABILITIES: Record<Role, readonly Capability[]> = {
     "invoice:create_send",
     "invoice:record_receipt",
     "bill:create_update",
+    "contact:manage",
+    "tracking_account:manage",
     "category:manage",
     "report:view",
     "report:export",
