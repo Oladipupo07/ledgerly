@@ -37,6 +37,9 @@ export default function LoginPage() {
         setBusy(false);
         return;
       }
+      if (mode === "register" && typeof window !== "undefined") {
+        window.localStorage.setItem("ledgerly.newUserTips", "1");
+      }
       window.location.href = "/";
     } catch {
       setError("Sign-in service is temporarily unavailable. Check your database connection and try again.");

@@ -63,6 +63,7 @@ export default function LedgerlyApp() {
 
   // Global Header Modals
   const [showOnboardingModal, setShowOnboardingModal] = useState(false);
+  const [showWelcomeTipsBanner, setShowWelcomeTipsBanner] = useState(true);
   const [showHelpModal, setShowHelpModal] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
   const [globalSearchOpen, setGlobalSearchOpen] = useState(false);
@@ -90,7 +91,17 @@ export default function LedgerlyApp() {
     const loaded = await loadWorkspaceData(selected, { id: session.user.id, name: session.user.name || "", email: session.user.email });
     setState(loaded);
     setActiveMemberId(session.user.id);
-    if (typeof window !== "undefined") window.localStorage.setItem("ledgerly.activeWorkspace", selected.id);
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem("ledgerly.activeWorkspace", selected.id);
+      const isNewSignup = window.localStorage.getItem("ledgerly.newUserTips") === "1";
+      const seenWorkspaceTips = window.localStorage.getItem(`ledgerly.tipsSeen:${selected.id}`) === "1";
+      if (isNewSignup || (!seenWorkspaceTips && loaded.transactions.length === 0)) {
+        setShowOnboardingModal(true);
+        setShowWelcomeTipsBanner(true);
+        window.localStorage.removeItem("ledgerly.newUserTips");
+        window.localStorage.setItem(`ledgerly.tipsSeen:${selected.id}`, "1");
+      }
+    }
     setBootstrapStatus("ready");
   }, []);
 
@@ -123,7 +134,9 @@ export default function LedgerlyApp() {
         method: "POST", body: JSON.stringify({ ...setupForm, fiscalYearStartMonth: 1 }),
       });
       await loadDataForWorkspace(created.id);
-      setToastBanner("Workspace created. Add your business tracking labels and opening balances in Settings.");
+      setShowOnboardingModal(true);
+      setShowWelcomeTipsBanner(true);
+      setToastBanner("Workspace created! Follow the quick tips guide to record your first entries.");
     } catch (error) {
       setBootstrapError(error instanceof Error ? error.message : "Workspace setup failed.");
     } finally { setSetupBusy(false); }
@@ -361,16 +374,24 @@ export default function LedgerlyApp() {
         <div style={{ marginBottom: 12 }}>
           <LedgerlyLogo heroBanner markSize={84} />
         </div>
-        <p className="eyebrow">LEDGERLY WORKSPACE SETUP</p>
+        <p className="eyebrow">WELCOME TO LEDGERLY · STEP 1 OF 2</p>
         <h1>Set up your business workspace</h1>
         <p>Ledgerly keeps bookkeeping records for your team. It does not connect to or move money from your bank.</p>
+        <div className="field-block" style={{ marginBottom: 18, background: "#f2fbf7", borderColor: "#b8e4d2" }}>
+          <b style={{ color: "#127a59", fontSize: 13 }}>💡 Quick Tips for New Users</b>
+          <ul style={{ margin: "8px 0 0", paddingLeft: 18, fontSize: 13, lineHeight: 1.6, color: "#1f3547" }}>
+            <li><b>1. Create your workspace below:</b> Enter your registered business name and short display name.</li>
+            <li><b>2. Default categories &amp; accounts are pre-loaded:</b> We automatically set up NGN categories and two tracking labels (<i>Primary Business Bank Label</i> &amp; <i>Cash</i>).</li>
+            <li><b>3. Next step after setup:</b> A guided walkthrough will show you how to enter opening balances, record transactions, import bank CSVs, and issue invoices.</li>
+          </ul>
+        </div>
         <form className="form-grid" onSubmit={createWorkspace}>
-          <label className="form-field"><span>Legal business name *</span><input required maxLength={160} value={setupForm.legalName} onChange={(event) => setSetupForm({ ...setupForm, legalName: event.target.value })} /></label>
-          <label className="form-field"><span>Workspace display name *</span><input required maxLength={100} value={setupForm.displayName} onChange={(event) => setSetupForm({ ...setupForm, displayName: event.target.value })} /></label>
+          <label className="form-field"><span>Legal business name *</span><input required maxLength={160} placeholder="e.g. Adebayo Consulting Ltd" value={setupForm.legalName} onChange={(event) => setSetupForm({ ...setupForm, legalName: event.target.value })} /></label>
+          <label className="form-field"><span>Workspace display name *</span><input required maxLength={100} placeholder="e.g. Adebayo HQ" value={setupForm.displayName} onChange={(event) => setSetupForm({ ...setupForm, displayName: event.target.value })} /></label>
           <label className="form-field"><span>Business type *</span><select value={setupForm.businessType} onChange={(event) => setSetupForm({ ...setupForm, businessType: event.target.value })}><option>Professional Services</option><option>Service &amp; Creative</option><option>Retail &amp; Trade</option><option>Distribution</option><option>Light Manufacturing</option></select></label>
           <label className="form-field"><span>City or state</span><input maxLength={120} placeholder="Lagos, Lagos State" value={setupForm.stateCity} onChange={(event) => setSetupForm({ ...setupForm, stateCity: event.target.value })} /></label>
           {bootstrapError && <p className="form-error full-span" role="alert">{bootstrapError}</p>}
-          <button className="primary full-span" type="submit" disabled={setupBusy}>{setupBusy ? "Creating workspace…" : "Create workspace"}</button>
+          <button className="primary full-span" type="submit" disabled={setupBusy}>{setupBusy ? "Creating workspace…" : "Create workspace & view tips →"}</button>
         </form>
       </div>
     </main>
@@ -464,6 +485,13 @@ export default function LedgerlyApp() {
           </div>
 
           <div className="top-actions">
+            <button
+              type="button"
+              className="secondary-btn"
+              onClick={() => setShowOnboardingModal(true)}
+            >
+              💡 Quick Tips ({setupProgress}/5)
+            </button>
             <button type="button" className="secondary-btn workspace-refresh" onClick={() => void refreshWorkspace()} aria-label="Refresh workspace data">Refresh</button>
             <button
               type="button"
@@ -522,6 +550,106 @@ export default function LedgerlyApp() {
               <b>Read-only Accountant Mode ({activeMember.name}):</b> You can inspect all records, Money Brief evidence, reports, exports, and the full audit trail. Create, edit, post, and reversal controls are disabled for your role.
             </span>
           </div>
+        )}
+
+        {/* New User Quick Start Tips Banner */}
+        {activeTab === "overview" && showWelcomeTipsBanner && (
+          <section
+            aria-label="New user quick tips"
+            style={{
+              margin: "0 0 18px",
+              padding: "16px 18px",
+              borderRadius: 12,
+              background: "linear-gradient(135deg, #effaf5 0%, #f7fbfd 100%)",
+              border: "1px solid #b8e4d2",
+            }}
+          >
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, marginBottom: 12 }}>
+              <div>
+                <span className="brief-label" style={{ color: "#127a59" }}>NEW USER GETTING STARTED GUIDE</span>
+                <h3 style={{ margin: "4px 0 2px", fontSize: 17, color: "#11273b" }}>
+                  Welcome{currentUser?.name ? `, ${currentUser.name}` : ""}! Here are 5 quick tips to use Ledgerly
+                </h3>
+                <p style={{ margin: 0, fontSize: 13, color: "#526572" }}>
+                  Follow these steps in order to set up accurate NGN bookkeeping and cash-flow tracking for <b>{state.workspace.displayName}</b>.
+                </p>
+              </div>
+              <div style={{ display: "flex", gap: 8 }}>
+                <button type="button" className="secondary-btn" onClick={() => setShowOnboardingModal(true)}>
+                  Full guide
+                </button>
+                <button
+                  type="button"
+                  className="close-btn"
+                  aria-label="Dismiss quick tips"
+                  title="Hide tips banner"
+                  onClick={() => setShowWelcomeTipsBanner(false)}
+                >
+                  ✕
+                </button>
+              </div>
+            </div>
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fit, minmax(185px, 1fr))",
+                gap: 10,
+              }}
+            >
+              <div className="field-block" style={{ margin: 0, background: "white" }}>
+                <b style={{ fontSize: 13, color: "#11273b" }}>1. Add Bank &amp; Cash Labels</b>
+                <p style={{ fontSize: 12, margin: "4px 0 8px", color: "#526572" }}>
+                  Add your bank or POS tracking labels (e.g. GTBank ••2041) and set their opening NGN balances.
+                </p>
+                <button type="button" className="text-btn" onClick={() => handleNavigate("settings")}>
+                  Go to Settings →
+                </button>
+              </div>
+              <div className="field-block" style={{ margin: 0, background: "white" }}>
+                <b style={{ fontSize: 13, color: "#11273b" }}>2. Record or Import Entries</b>
+                <p style={{ fontSize: 12, margin: "4px 0 8px", color: "#526572" }}>
+                  Log daily sales &amp; expenses manually or upload a bank statement CSV with duplicate checking.
+                </p>
+                <button
+                  type="button"
+                  className="text-btn"
+                  onClick={() => {
+                    setActiveTab("transactions");
+                    setTxModalSignal("new_tx");
+                  }}
+                >
+                  Record transaction →
+                </button>
+              </div>
+              <div className="field-block" style={{ margin: 0, background: "white" }}>
+                <b style={{ fontSize: 13, color: "#11273b" }}>3. Add Customers &amp; Invoices</b>
+                <p style={{ fontSize: 12, margin: "4px 0 8px", color: "#526572" }}>
+                  Create customer contacts, generate NGN invoices, and record partial or full payment receipts.
+                </p>
+                <button type="button" className="text-btn" onClick={() => handleNavigate("invoices")}>
+                  Create invoice →
+                </button>
+              </div>
+              <div className="field-block" style={{ margin: 0, background: "white" }}>
+                <b style={{ fontSize: 13, color: "#11273b" }}>4. Track Supplier Bills</b>
+                <p style={{ fontSize: 12, margin: "4px 0 8px", color: "#526572" }}>
+                  Log vendor payables and due dates so Money Brief warns you before bills become overdue.
+                </p>
+                <button type="button" className="text-btn" onClick={() => handleNavigate("suppliers")}>
+                  Manage suppliers →
+                </button>
+              </div>
+              <div className="field-block" style={{ margin: 0, background: "white" }}>
+                <b style={{ fontSize: 13, color: "#11273b" }}>5. Invite Team or Accountant</b>
+                <p style={{ fontSize: 12, margin: "4px 0 8px", color: "#526572" }}>
+                  Invite a Staff Bookkeeper to enter records or an External Accountant with read-only audit access.
+                </p>
+                <button type="button" className="text-btn" onClick={() => handleNavigate("team")}>
+                  Invite team →
+                </button>
+              </div>
+            </div>
+          </section>
         )}
 
         {/* Active Screen View */}
@@ -913,14 +1041,14 @@ export default function LedgerlyApp() {
         </div>
       )}
 
-      {/* First-Time Setup / Onboarding Checklist Modal (FR-01) */}
+      {/* First-Time Setup / Onboarding Checklist & Tips Modal (FR-01) */}
       {showOnboardingModal && (
         <div className="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="onb-title">
-          <div className="modal-card">
+          <div className="modal-card" style={{ maxWidth: 640 }}>
             <div className="modal-header">
               <div>
-                <span className="brief-label">WORKSPACE ONBOARDING PROGRESS (FR-01)</span>
-                <h2 id="onb-title">Workspace setup checklist ({setupProgress}/5)</h2>
+                <span className="brief-label">WELCOME TO LEDGERLY · GETTING STARTED TIPS (FR-01)</span>
+                <h2 id="onb-title">How to use your workspace ({setupProgress}/5 steps complete)</h2>
               </div>
               <button
                 type="button"
@@ -931,9 +1059,31 @@ export default function LedgerlyApp() {
               </button>
             </div>
             <div className="modal-body">
+              <div className="field-block" style={{ marginBottom: 14, background: "#f2fbf7", borderColor: "#b8e4d2" }}>
+                <h4 style={{ margin: "0 0 6px", color: "#127a59" }}>💡 Practical Tips for Using Ledgerly</h4>
+                <ul className="role-list" style={{ margin: 0 }}>
+                  <li>
+                    <b>Start in Settings (Tracking Labels):</b> Ledgerly does not link to your bank directly. Add labels for each bank account, POS terminal, or cash drawer you use, along with its opening NGN balance.
+                  </li>
+                  <li>
+                    <b>Draft vs. Posted Transactions:</b> Save uncertain entries as <i>Draft</i> while checking receipts. Once <i>Posted</i>, entries are locked for audit integrity—if you make a mistake later, click <b>Reverse / Correct</b> to post an auditable adjustment.
+                  </li>
+                  <li>
+                    <b>Fast Bank CSV Import:</b> In <i>Transactions → Import CSV</i>, upload your bank statement CSV, map the Date/Amount/Description columns, and review flagged duplicates before committing.
+                  </li>
+                  <li>
+                    <b>Invoices &amp; Supplier Bills Automatically Post to Your Ledger:</b> Recording a payment receipt on an invoice or a payment on a supplier bill automatically updates your recorded cash balance.
+                  </li>
+                  <li>
+                    <b>Check Your Money Brief Daily:</b> The <i>Overview</i> screen highlights overdue receivables, upcoming supplier bills, expense spikes, and cash runway based on your real records.
+                  </li>
+                </ul>
+              </div>
+
+              <h4 style={{ margin: "12px 0 8px" }}>Your Workspace Setup Checklist</h4>
               <ul className="role-list">
                 <li>
-                  {currentUser?.id ? "✓" : "○"} <b>Step 1 — Account:</b> {currentUser?.name || currentUser?.email || "Signed in user"}
+                  {currentUser?.id ? "✓" : "○"} <b>Step 1 — Account created:</b> {currentUser?.name || currentUser?.email || "Signed in user"}
                 </li>
                 <li>
                   {state.workspace.legalName ? "✓" : "○"} <b>Step 2 — Business profile:</b> {state.workspace.legalName} ({state.workspace.stateCity || "Add a business location in Settings"}).
@@ -948,6 +1098,51 @@ export default function LedgerlyApp() {
                   {state.transactions.length || state.members.length > 1 ? "✓" : "○"} <b>Step 5 — First records and team:</b> {state.transactions.length} transaction(s), {state.members.length} member(s).
                 </li>
               </ul>
+
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 14 }}>
+                <button
+                  type="button"
+                  className="secondary-btn"
+                  onClick={() => {
+                    setShowOnboardingModal(false);
+                    handleNavigate("settings");
+                  }}
+                >
+                  1. Configure accounts in Settings
+                </button>
+                <button
+                  type="button"
+                  className="secondary-btn"
+                  onClick={() => {
+                    setShowOnboardingModal(false);
+                    setActiveTab("transactions");
+                    setTxModalSignal("new_tx");
+                  }}
+                >
+                  2. Record first transaction
+                </button>
+                <button
+                  type="button"
+                  className="secondary-btn"
+                  onClick={() => {
+                    setShowOnboardingModal(false);
+                    setActiveTab("transactions");
+                    setTxModalSignal("csv_import");
+                  }}
+                >
+                  3. Import bank CSV
+                </button>
+                <button
+                  type="button"
+                  className="secondary-btn"
+                  onClick={() => {
+                    setShowOnboardingModal(false);
+                    handleNavigate("invoices");
+                  }}
+                >
+                  4. Create an invoice
+                </button>
+              </div>
             </div>
             <div className="modal-footer">
               <button
@@ -955,7 +1150,7 @@ export default function LedgerlyApp() {
                 className="primary"
                 onClick={() => setShowOnboardingModal(false)}
               >
-                Continue to workspace
+                Got it, take me to workspace
               </button>
             </div>
           </div>
