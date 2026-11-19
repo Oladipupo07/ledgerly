@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" fill="none">
+  <rect width="120" height="120" rx="24" fill="#F6F8F7" />
+  <!-- Left ledger spine column -->
+  <path
+    fill-rule="evenodd"
+    clip-rule="evenodd"
+    d="M18 30H42V96H45V102H15V96H18V30ZM25 37V46H35V37H25ZM25 53V96H35V53H25Z"
+    fill="#127A59"
+  />
+  <!-- Stylized serif-capped L -->
+  <path
+    d="M45 18H70V25H64V92H106V102H50V25H45V18Z"
+    fill="#127A59"
+  />
+  <!-- Ascending financial bars -->
+  <rect x="70" y="45" width="14" height="27" fill="#127A59" />
+  <rect x="89" y="29" width="15" height="43" fill="#127A59" />
+  <!-- Warm amber-gold balance bar -->
+  <path
+    d="M70 77H105V81C105 84.866 101.866 88 98 88H70V77Z"
+    fill="#D9822B"
+  />
+</svg>
+

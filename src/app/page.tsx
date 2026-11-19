@@ -16,6 +16,7 @@ import { InvoicesView } from "@/components/InvoicesView";
 import { ContactsAndBillsView } from "@/components/ContactsAndBillsView";
 import { CashFlowAndReportsView } from "@/components/CashFlowAndReportsView";
 import { TeamAuditSettingsView } from "@/components/TeamAuditSettingsView";
+import { LedgerlyLogo } from "@/components/LedgerlyLogo";
 import { apiRequest, ClientApiError, loadWorkspaceData, newIdempotencyKey, type WorkspaceOption } from "@/lib/client-api";
 import { signOut } from "next-auth/react";
 
@@ -121,22 +122,6 @@ export default function LedgerlyApp() {
       const created = await apiRequest<{ id: string }>("/api/v1/workspace", {
         method: "POST", body: JSON.stringify({ ...setupForm, fiscalYearStartMonth: 1 }),
       });
-      const categories = [
-        ["Sales", "income"], ["Other income", "income"], ["Operating expenses", "expense"],
-        ["Supplier costs", "expense"], ["General", "both"],
-      ] as const;
-      for (const [name, type] of categories) {
-        try {
-          await apiRequest(`/api/v1/organisations/${created.id}/categories`, {
-            method: "POST", body: JSON.stringify({ name, type }),
-          }, `setup:${created.id}:category:${name.toLowerCase().replaceAll(" ", "-")}`);
-        } catch (error) { if (!(error instanceof ClientApiError && error.status === 409)) throw error; }
-      }
-      try {
-        await apiRequest(`/api/v1/organisations/${created.id}/tracking-accounts`, {
-          method: "POST", body: JSON.stringify({ name: "Cash", kind: "cash_label", openingBalanceKobo: "0", openingBalanceDate: new Date().toISOString().slice(0, 10) }),
-        }, `setup:${created.id}:account:cash`);
-      } catch (error) { if (!(error instanceof ClientApiError && error.status === 409)) throw error; }
       await loadDataForWorkspace(created.id);
       setToastBanner("Workspace created. Add your business tracking labels and opening balances in Settings.");
     } catch (error) {
@@ -316,13 +301,67 @@ export default function LedgerlyApp() {
     URL.revokeObjectURL(objectUrl);
   };
 
-  if (bootstrapStatus === "loading") return <main className="connection-state" role="status">Loading your Ledgerly workspace…</main>;
-  if (bootstrapStatus === "signed-out") return <main className="connection-state"><h1>Sign in to Ledgerly</h1><p>Your business records are available after signing in.</p><a className="primary" href="/login">Continue to sign in</a></main>;
-  if (bootstrapStatus === "error") return <main className="connection-state"><h1>Workspace unavailable</h1><p role="alert">{bootstrapError}</p><button className="primary" type="button" onClick={() => { setBootstrapStatus("loading"); void loadDataForWorkspace().catch((error: unknown) => { setBootstrapError(error instanceof Error ? error.message : "Could not load Ledgerly."); setBootstrapStatus("error"); }); }}>Try again</button><a className="secondary-btn" href="/login">Sign in again</a></main>;
+  if (bootstrapStatus === "loading") {
+    return (
+      <main className="connection-state" role="status">
+        <div style={{ marginBottom: 14 }}>
+          <LedgerlyLogo markSize={44} fontSize={26} textColor="#11273b" />
+        </div>
+        <p>Loading your Ledgerly workspace…</p>
+      </main>
+    );
+  }
+  if (bootstrapStatus === "signed-out") {
+    return (
+      <main className="connection-state setup-state">
+        <div className="setup-card" style={{ maxWidth: 560, textAlign: "center", padding: "36px 32px" }}>
+          <div style={{ display: "flex", justifyContent: "center", marginBottom: 18 }}>
+            <LedgerlyLogo heroBanner markSize={110} />
+          </div>
+          <p className="eyebrow" style={{ marginTop: 4 }}>NON-CUSTODIAL FINANCIAL OPERATIONS FOR NIGERIAN SMEs</p>
+          <h1 style={{ fontSize: 30, margin: "8px 0 10px" }}>Business money, made clear</h1>
+          <p style={{ maxWidth: 460, margin: "0 auto 22px", lineHeight: 1.6 }}>
+            Track NGN cash positions, deterministic Money Brief alerts, customer invoices, supplier bills, and append-only audit trails across your team.
+          </p>
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(145px, 1fr))",
+              gap: 10,
+              textAlign: "left",
+              marginBottom: 24,
+            }}
+          >
+            <div className="field-block" style={{ margin: 0, padding: "10px 12px" }}>
+              <b style={{ fontSize: 13, color: "#127a59" }}>✓ Integer-Kobo Ledger</b>
+              <p style={{ fontSize: 12, margin: "4px 0 0" }}>Immutable posted records with audited reversals.</p>
+            </div>
+            <div className="field-block" style={{ margin: 0, padding: "10px 12px" }}>
+              <b style={{ fontSize: 13, color: "#127a59" }}>✓ Money Brief</b>
+              <p style={{ fontSize: 12, margin: "4px 0 0" }}>Deterministic rules with transparent calculations.</p>
+            </div>
+            <div className="field-block" style={{ margin: 0, padding: "10px 12px" }}>
+              <b style={{ fontSize: 13, color: "#127a59" }}>✓ NGN Receivables</b>
+              <p style={{ fontSize: 12, margin: "4px 0 0" }}>Partial receipts, supplier bills, and aging reports.</p>
+            </div>
+          </div>
+          <div style={{ display: "flex", gap: 12, justifyContent: "center", flexWrap: "wrap" }}>
+            <a className="primary" href="/login" style={{ minWidth: 220, justifyContent: "center" }}>
+              Continue to sign in →
+            </a>
+          </div>
+        </div>
+      </main>
+    );
+  }
+  if (bootstrapStatus === "error") return <main className="connection-state"><div style={{ marginBottom: 12 }}><LedgerlyLogo markSize={40} fontSize={24} textColor="#11273b" /></div><h1>Workspace unavailable</h1><p role="alert">{bootstrapError}</p><button className="primary" type="button" onClick={() => { setBootstrapStatus("loading"); void loadDataForWorkspace().catch((error: unknown) => { setBootstrapError(error instanceof Error ? error.message : "Could not load Ledgerly."); setBootstrapStatus("error"); }); }}>Try again</button><a className="secondary-btn" href="/login">Sign in again</a></main>;
   if (bootstrapStatus === "needs-workspace") return (
     <main className="connection-state setup-state">
       <div className="setup-card">
-        <span className="brand-mark">l</span><p className="eyebrow">LEDGERLY WORKSPACE SETUP</p>
+        <div style={{ marginBottom: 12 }}>
+          <LedgerlyLogo heroBanner markSize={84} />
+        </div>
+        <p className="eyebrow">LEDGERLY WORKSPACE SETUP</p>
         <h1>Set up your business workspace</h1>
         <p>Ledgerly keeps bookkeeping records for your team. It does not connect to or move money from your bank.</p>
         <form className="form-grid" onSubmit={createWorkspace}>
@@ -349,7 +388,7 @@ export default function LedgerlyApp() {
             handleNavigate("overview");
           }}
         >
-          <span className="brand-mark">l</span> ledgerly
+          <LedgerlyLogo markSize={30} fontSize={20} />
         </a>
 
         <div className="workspace">
@@ -416,7 +455,7 @@ export default function LedgerlyApp() {
       <section className="content">
         <header className="topbar">
           <div className="mobile-brand">
-            <span className="brand-mark">l</span> ledgerly
+            <LedgerlyLogo markSize={26} fontSize={18} />
           </div>
 
           <div className="crumb">

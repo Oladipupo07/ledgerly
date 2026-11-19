@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { signIn } from "next-auth/react";
+import { LedgerlyLogo } from "@/components/LedgerlyLogo";
 
 type PageState = "checking" | "sign-in" | "accepted" | "error";
 
@@ -59,11 +59,13 @@ export default function AcceptInvitationPage() {
   return (
     <main className="connection-state">
       <section className="setup-card invitation-accept-card" aria-live="polite">
-        <span className="brand-mark" aria-hidden="true">l</span>
+        <div style={{ marginBottom: 12 }}>
+          <LedgerlyLogo heroBanner markSize={84} />
+        </div>
         <p className="eyebrow">LEDGERLY WORKSPACE INVITATION</p>
         <h1>{status === "accepted" ? "You’re in" : status === "sign-in" ? "Sign in to accept" : status === "error" ? "Invitation unavailable" : "Accept invitation"}</h1>
         <p role={status === "error" ? "alert" : "status"}>{message}</p>
-        {status === "sign-in" && <button className="primary" type="button" onClick={() => void signIn("ledgerly-oidc", { redirectTo: "/invite/accept" })}>Sign in with invited email</button>}
+        {status === "sign-in" && <a className="primary" href="/login">Sign in with invited email</a>}
         {status === "error" && <a className="secondary-btn" href="/login">Go to sign in</a>}
       </section>
     </main>

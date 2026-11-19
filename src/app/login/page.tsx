@@ -2,6 +2,7 @@
 
 import React, { useState } from "react";
 import { signIn } from "next-auth/react";
+import { LedgerlyLogo } from "@/components/LedgerlyLogo";
 
 export default function LoginPage() {
   const [mode, setMode] = useState<"signin" | "register">("signin");
@@ -55,26 +56,11 @@ export default function LoginPage() {
         boxShadow: "0 12px 32px rgba(17, 39, 59, 0.06)",
       }}
     >
-      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
-        <span
-          style={{
-            display: "inline-flex",
-            width: 28,
-            height: 28,
-            borderRadius: 8,
-            background: "#127a59",
-            color: "white",
-            alignItems: "center",
-            justifyContent: "center",
-            fontWeight: 800,
-          }}
-        >
-          l
-        </span>
-        <strong style={{ color: "#127a59", fontSize: 18 }}>ledgerly</strong>
+      <div style={{ display: "flex", justifyContent: "center", marginBottom: 14 }}>
+        <LedgerlyLogo heroBanner markSize={96} />
       </div>
 
-      <h1 style={{ fontSize: 26, color: "#11273b", margin: "8px 0" }}>
+      <h1 style={{ fontSize: 26, color: "#11273b", margin: "8px 0", textAlign: "center" }}>
         {mode === "signin" ? "Sign in to your workspace" : "Create your Ledgerly account"}
       </h1>
       <p style={{ color: "#61737f", lineHeight: 1.5, fontSize: 14, marginBottom: 20 }}>

@@ -107,14 +107,16 @@ export async function POST(request: NextRequest) {
       await client.query(
         `INSERT INTO tracking_accounts
            (organisation_id, name, kind, masked_ref, opening_balance_kobo, opening_balance_date, opening_balance_recorded_by)
-         VALUES ($1, 'Primary Business Bank Label', 'bank_label', 'Non-custodial record', 0, CURRENT_DATE, $2)
+         VALUES
+           ($1, 'Primary Business Bank Label', 'bank_label', 'Non-custodial record', 0, CURRENT_DATE, $2),
+           ($1, 'Cash', 'cash_label', 'Cash in hand', 0, CURRENT_DATE, $2)
          ON CONFLICT DO NOTHING`,
         [organisationId, userId],
       );
       await client.query(
         `INSERT INTO audit_events (organisation_id, actor_user_id, action, entity_type, entity_id, after_data)
-         VALUES ($1, $2, 'workspace.created', 'workspace', $1::text, jsonb_build_object('displayName', $3))`,
-        [organisationId, userId, displayName],
+         VALUES ($1, $2, 'workspace.created', 'workspace', $3, jsonb_build_object('displayName', $4::text))`,
+        [organisationId, userId, String(organisationId), displayName],
       );
       return { id: organisationId, displayName, legalName, role: "owner" };
     });
