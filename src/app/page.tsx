@@ -37,6 +37,8 @@ export default function LedgerlyApp() {
   const [setupForm, setSetupForm] = useState({ legalName: "", displayName: "", businessType: "Professional Services", stateCity: "" });
   const [setupBusy, setSetupBusy] = useState(false);
   const [activeTab, setActiveTab] = useState<NavTab>("overview");
+  const [sidebarIconOnly, setSidebarIconOnly] = useState(true);
+  const [sidebarDropdownOpen, setSidebarDropdownOpen] = useState(true);
   const [showMobileMore, setShowMobileMore] = useState(false);
   const [txTypeFilterHint, setTxTypeFilterHint] = useState<string>("all");
   const [txModalSignal, setTxModalSignal] = useState<"new_tx" | "csv_import" | null>(null);
@@ -398,78 +400,153 @@ export default function LedgerlyApp() {
   );
 
   return (
-    <main className="shell">
-      {/* Desktop & Tablet Sidebar */}
-      <aside className="sidebar">
-        <a
-          className="brand"
-          href="#overview"
-          onClick={(e) => {
-            e.preventDefault();
-            handleNavigate("overview");
-          }}
-        >
-          <LedgerlyLogo markSize={30} fontSize={20} />
-        </a>
-
-        <div className="workspace">
-          <span className="avatar" aria-hidden="true">{state.workspace.displayName.slice(0, 1).toUpperCase()}</span>
-          {workspaceOptions.length > 1 ? <label className="workspace-select-label"><span className="sr-only">Current workspace</span><select aria-label="Current workspace" value={state.workspace.id} onChange={(event) => { setBootstrapStatus("loading"); void loadDataForWorkspace(event.target.value).catch((error: unknown) => { setBootstrapError(error instanceof Error ? error.message : "Could not switch workspaces."); setBootstrapStatus("error"); }); }}>{workspaceOptions.map((option) => <option key={option.id} value={option.id}>{option.displayName}</option>)}</select><small>{state.workspace.stateCity || "NGN workspace"} · NGN</small></label> : <span><b>{state.workspace.displayName}</b><small>{state.workspace.stateCity || "NGN workspace"} · NGN</small></span>}
-        </div>
-
-        <nav aria-label="Main navigation">
-          {(
-            [
-              { id: "overview", icon: "◫", label: "Overview" },
-              { id: "transactions", icon: "↕", label: "Transactions" },
-              { id: "invoices", icon: "▤", label: "Invoices" },
-              { id: "customers", icon: "♙", label: "Customers" },
-              { id: "suppliers", icon: "◇", label: "Suppliers" },
-              { id: "cashflow", icon: "⌁", label: "Cash flow" },
-              { id: "reports", icon: "▥", label: "Reports" },
-              { id: "team", icon: "⊕", label: "Team & Audit" },
-              { id: "settings", icon: "⚙", label: "Settings" },
-            ] as const
-          ).filter((item) => {
-            if (item.id === "team") return hasCapability(activeMember.role, "audit:view_own") || hasCapability(activeMember.role, "audit:view_all") || hasCapability(activeMember.role, "workspace:manage_members");
-            if (item.id === "settings") return hasCapability(activeMember.role, "workspace:manage_settings");
-            if (item.id === "cashflow" || item.id === "reports") return hasCapability(activeMember.role, "report:view");
-            return true;
-          }).map((item) => (
-            <button
-              key={item.id}
-              type="button"
-              className={`nav-item ${activeTab === item.id ? "active" : ""}`}
-              onClick={() => handleNavigate(item.id)}
-            >
-              <span>{item.icon}</span> {item.label}
-            </button>
-          ))}
-        </nav>
-
-        <div className="sidebar-bottom">
-          <button
-            type="button"
-            className="onboarding-pill"
-            onClick={() => setShowOnboardingModal(true)}
+    <main className={`shell ${sidebarIconOnly ? "shell-icon-only" : ""} ${!sidebarDropdownOpen ? "shell-nav-folded" : ""}`}>
+      {/* Desktop & Tablet Collapsible / Dropdown Icon Sidebar */}
+      <aside className={`sidebar ${sidebarIconOnly ? "icon-only" : ""} ${!sidebarDropdownOpen ? "nav-folded" : ""}`}>
+        <div className="sidebar-top-row">
+          <a
+            className="brand"
+            href="#overview"
+            title="Ledgerly — Overview"
+            onClick={(e) => {
+              e.preventDefault();
+              handleNavigate("overview");
+            }}
           >
-            <span>✓</span> Setup checklist ({setupProgress}/5)
-          </button>
+            <LedgerlyLogo markSize={30} fontSize={20} iconOnly={sidebarIconOnly} />
+          </a>
 
-          <div className="profile">
-            <span className="avatar owner">
-              {activeMember.name
-                .split(" ")
-                .map((n) => n[0])
-                .join("")
-                .slice(0, 2)}
-            </span>
-            <span style={{ minWidth: 0 }}>
-              <b>{activeMember.name}</b>
-              <small>{ROLE_DESCRIPTIONS[activeMember.role].label}</small>
-            </span>
+          <div className="sidebar-toggles">
+            <button
+              type="button"
+              className="sidebar-toggle-btn"
+              onClick={() => setSidebarDropdownOpen((open) => !open)}
+              aria-expanded={sidebarDropdownOpen}
+              aria-label={sidebarDropdownOpen ? "Fold navigation menu up" : "Drop down navigation menu"}
+              title={sidebarDropdownOpen ? "Hide menu icons (full screen)" : "Drop down menu icons"}
+            >
+              {sidebarDropdownOpen ? "▴" : "▾"}
+            </button>
+            {sidebarDropdownOpen && (
+              <button
+                type="button"
+                className="sidebar-toggle-btn"
+                onClick={() => setSidebarIconOnly((v) => !v)}
+                aria-label={sidebarIconOnly ? "Show sidebar text labels" : "Show icons only"}
+                title={sidebarIconOnly ? "Expand labels" : "Collapse to icons only"}
+              >
+                {sidebarIconOnly ? "»" : "«"}
+              </button>
+            )}
           </div>
         </div>
+
+        {sidebarDropdownOpen && (
+          <>
+            <div className="workspace" title={`${state.workspace.displayName} (${state.workspace.stateCity || "NGN workspace"})`}>
+              <span className="avatar" aria-hidden="true">{state.workspace.displayName.slice(0, 1).toUpperCase()}</span>
+              {!sidebarIconOnly && (
+                workspaceOptions.length > 1 ? (
+                  <label className="workspace-select-label">
+                    <span className="sr-only">Current workspace</span>
+                    <select
+                      aria-label="Current workspace"
+                      value={state.workspace.id}
+                      onChange={(event) => {
+                        setBootstrapStatus("loading");
+                        void loadDataForWorkspace(event.target.value).catch((error: unknown) => {
+                          setBootstrapError(error instanceof Error ? error.message : "Could not switch workspaces.");
+                          setBootstrapStatus("error");
+                        });
+                      }}
+                    >
+                      {workspaceOptions.map((option) => (
+                        <option key={option.id} value={option.id}>
+                          {option.displayName}
+                        </option>
+                      ))}
+                    </select>
+                    <small>{state.workspace.stateCity || "NGN workspace"} · NGN</small>
+                  </label>
+                ) : (
+                  <span>
+                    <b>{state.workspace.displayName}</b>
+                    <small>{state.workspace.stateCity || "NGN workspace"} · NGN</small>
+                  </span>
+                )
+              )}
+            </div>
+
+            <nav aria-label="Main navigation">
+              {(
+                [
+                  { id: "overview", icon: "◫", label: "Overview" },
+                  { id: "transactions", icon: "↕", label: "Transactions" },
+                  { id: "invoices", icon: "▤", label: "Invoices" },
+                  { id: "customers", icon: "♙", label: "Customers" },
+                  { id: "suppliers", icon: "◇", label: "Suppliers" },
+                  { id: "cashflow", icon: "⌁", label: "Cash flow" },
+                  { id: "reports", icon: "▥", label: "Reports" },
+                  { id: "team", icon: "⊕", label: "Team & Audit" },
+                  { id: "settings", icon: "⚙", label: "Settings" },
+                ] as const
+              )
+                .filter((item) => {
+                  if (item.id === "team")
+                    return (
+                      hasCapability(activeMember.role, "audit:view_own") ||
+                      hasCapability(activeMember.role, "audit:view_all") ||
+                      hasCapability(activeMember.role, "workspace:manage_members")
+                    );
+                  if (item.id === "settings") return hasCapability(activeMember.role, "workspace:manage_settings");
+                  if (item.id === "cashflow" || item.id === "reports") return hasCapability(activeMember.role, "report:view");
+                  return true;
+                })
+                .map((item) => (
+                  <button
+                    key={item.id}
+                    type="button"
+                    className={`nav-item ${activeTab === item.id ? "active" : ""}`}
+                    onClick={() => handleNavigate(item.id)}
+                    title={item.label}
+                    aria-label={item.label}
+                  >
+                    <span aria-hidden="true">{item.icon}</span>
+                    {!sidebarIconOnly && <em className="nav-label">{item.label}</em>}
+                  </button>
+                ))}
+            </nav>
+
+            <div className="sidebar-bottom">
+              <button
+                type="button"
+                className="onboarding-pill"
+                onClick={() => setShowOnboardingModal(true)}
+                title={`Setup checklist (${setupProgress}/5)`}
+                aria-label={`Setup checklist (${setupProgress}/5)`}
+              >
+                <span>✓</span>
+                {!sidebarIconOnly && <span>Setup checklist ({setupProgress}/5)</span>}
+              </button>
+
+              <div className="profile" title={`${activeMember.name} · ${ROLE_DESCRIPTIONS[activeMember.role].label}`}>
+                <span className="avatar owner">
+                  {activeMember.name
+                    .split(" ")
+                    .map((n) => n[0])
+                    .join("")
+                    .slice(0, 2)}
+                </span>
+                {!sidebarIconOnly && (
+                  <span style={{ minWidth: 0 }}>
+                    <b>{activeMember.name}</b>
+                    <small>{ROLE_DESCRIPTIONS[activeMember.role].label}</small>
+                  </span>
+                )}
+              </div>
+            </div>
+          </>
+        )}
       </aside>
 
       {/* Main Content Area */}
